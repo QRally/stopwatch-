@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Rally Timing Node</title>
+  
+  <!-- Firebase Compatibility SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+
+  <style>
+    * { 
+      box-sizing: border-box; 
+      margin: 0; 
+      padding: 0; 
+      user-select: none; 
+      -webkit-user-select: none;
+    }
+    
+    html, body { 
+      background: #000; 
+      color: #0f0; 
+      font-family: monospace; 
+      overflow: hidden; 
+      height: 100dvh; 
+      width: 100vw;
+      display: flex; 
+      flex-direction: column; 
+    }
+
+    /* Role Setup Overlay */
+    #setup-modal {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: #111;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .setup-card {
+      background: #1a1a1a;
+      border: 2px solid #333;
+      border-radius: 12px;
+      padding: 24px;
+      width: 100%;
+      max-width: 380px;
+      text-align: center;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 16px;
+      margin: 8px 0;
+      font-size: 1.2rem;
+      font-weight: bold;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      color: #fff;
+    }
+    
+    .btn-start { background: #007bc7; }
+    .btn-finish { background: #d92b2b; }
+
+    /* Header Bar */
+    #header-bar {
+      background: #111;
+      padding: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #333;
+      font-size: 0.9rem;
+    }
+
+    #stage-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 12px;
+      gap: 12px;
+      overflow-y: auto;
+    }
+
+    .time-banner {
+      background: #051505;
+      border: 2px solid #0f0;
+      border-radius: 8px;
+      padding: 12px;
+      text-align: center;
+    }
+
+    #clock {
+      font-size: 2.8rem;
+      font-weight: bold;
+      letter-spacing: 2px;
+    }
+
+    /* Car Picker */
+    .car-input-group {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      background: #111;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #333;
+    }
+
+    .car-input-group label { font-size: 1.2rem; color: #fff; }
+    
+    #car-no {
+      background: #000;
+      border: 2px solid #555;
+      color: #fff;
+      font-size: 1.8rem;
+      font-family: monospace;
+      width: 100px;
+      text-align: center;
+      border-radius: 6px;
+      padding: 4px;
+    }
+
+    /* Trigger Button */
+    #action-btn {
+      height: 90px;
+      font-size: 1.8rem;
+      font-weight: bold;
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      cursor: pointer;
+    }
+    .action-start-mode { background: #007bc7; box-shadow: 0 0 15px rgba(0,123,199,0.4); }
+    .action-finish-mode { background: #d92b2b; box-shadow: 0 0 15px rgba(217,43,43,0.4); }
+
+    /* Recent Stage Feed */
+    #log-feed {
+      flex: 1;
+      background: #0a0a0a;
+      border: 1px solid #222;
+      border-radius: 8px;
+      padding: 10px;
+      overflow-y: auto;
+    }
+
+    .log-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px;
+      border-bottom: 1px solid #1c1c1c;
+      font-size: 0.95rem;
+    }
+    .log-item .elapsed { color: #0f0; font-weight: bold; }
+    .log-item .pending { color: #ffaa00; }
+  </style>
+</head>
+<body>
+
+  <!-- Node Role Selector Overlay -->
+  <div id="setup-modal">
+    <div class="setup-card">
+      <h2 style="color:#fff; margin-bottom:12px;">SELECT NODE ROLE</h2>
+      <p style="color:#aaa; font-size:0.85rem; margin-bottom:20px;">The Regulator Rally Stage Timing System</p>
+      
+      <button class="btn btn-start" onclick="setRole('START')">START CONTROL</button>
+      <button class="btn btn-finish" onclick="setRole('FINISH')">FINISH CONTROL</button>
+    </div>
+  </div>
+
+  <!-- Header Dashboard -->
+  <div id="header-bar">
+    <span id="role-indicator" style="font-weight:bold;">ROLE: UNSET</span>
+    <span id="sync-status" style="color:#888;">Firebase: Connecting...</span>
+  </div>
+
+  <!-- Main Workspace -->
+  <div id="stage-container">
+    <div class="time-banner">
+      <div id="clock">00:00:00.0</div>
+      <div style="color:#888; font-size:0.75rem; margin-top:4px;">SYNCED ATOMIC UTC TIME</div>
+    </div>
+
+    <div class="car-input-group">
+      <label for="car-no">CAR #</label>
+      <input type="number" id="car-no" value="1" min="1" max="999">
+    </div>
+
+    <button id="action-btn" class="action-start-mode" onclick="triggerLog()">LOG TIME</button>
+
+    <div id="log-feed">
+      <div style="color:#555; text-align:center; padding-top:10px;">Recent Stage Times</div>
+    </div>
+  </div>
+
+  <script>
+    // Live Firebase Config for "the-regulator-rally"
+    const firebaseConfig = {
+      apiKey: "AIzaSyCLi3NMmoJJCeJFGU4oeABpQyivQe1Z6i0",
+      authDomain: "the-regulator-rally.firebaseapp.com",
+      databaseURL: "https://the-regulator-rally-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "the-regulator-rally",
+      storageBucket: "the-regulator-rally.firebasestorage.app",
+      messagingSenderId: "1026958520151",
+      appId: "1:1026958520151:web:1665550c6b9e3a8bf9d812"
+    };
+const app = firebase.initializeApp(firebaseConfig);
+const db = firebase.app().database("https://the-regulator-rally-default-rtdb.europe-west1.firebasedatabase.app");
+
+
+    // Enable local offline persistence
+    try {
+      db.goOnline();
+    } catch(e) { console.log(e); }
+
+    let nodeRole = null;
+    let serverTimeOffset = 0;
+    const stageID = "Stage_1";
+
+    // Monitor Firebase Connection & Clock Sync Offset
+    db.ref(".info/serverTimeOffset").on("value", (snap) => {
+      serverTimeOffset = snap.val() || 0;
+    });
+
+    db.ref(".info/connected").on("value", (snap) => {
+      const status = document.getElementById('sync-status');
+      if (snap.val() === true) {
+        status.textContent = "Firebase: ONLINE";
+        status.style.color = "#0f0";
+      } else {
+        status.textContent = "Firebase: OFFLINE (Queuing)";
+        status.style.color = "#ffaa00";
+      }
+    });
+
+    // Precision Clock Loop
+    function updateClock() {
+      const accurateNow = new Date(Date.now() + serverTimeOffset);
+      const hrs = String(accurateNow.getHours()).padStart(2, '0');
+      const mins = String(accurateNow.getMinutes()).padStart(2, '0');
+      const secs = String(accurateNow.getSeconds()).padStart(2, '0');
+      const ms = Math.floor(accurateNow.getMilliseconds() / 100);
+      
+      document.getElementById('clock').textContent = `${hrs}:${mins}:${secs}.${ms}`;
+    }
+    setInterval(updateClock, 50);
+
+    // Set Role (Start / Finish)
+    function setRole(role) {
+      nodeRole = role;
+      document.getElementById('setup-modal').style.display = 'none';
+      
+      const roleText = document.getElementById('role-indicator');
+      const actionBtn = document.getElementById('action-btn');
+      
+      if (role === 'START') {
+        roleText.textContent = "ROLE: START CONTROL";
+        roleText.style.color = "#007bc7";
+        actionBtn.textContent = "LOG START TIME";
+        actionBtn.className = "action-start-mode";
+      } else {
+        roleText.textContent = "ROLE: FINISH CONTROL";
+        roleText.style.color = "#d92b2b";
+        actionBtn.textContent = "LOG FINISH TIME";
+        actionBtn.className = "action-finish-mode";
+      }
+
+      listenToStageUpdates();
+    }
+
+    // Trigger Action Log
+    function triggerLog() {
+      const carInput = document.getElementById('car-no');
+      const carNumber = carInput.value;
+
+      if (!carNumber) {
+        alert("Enter Car Number First");
+        return;
+      }
+
+      const timestamp = Date.now() + serverTimeOffset;
+      const carRef = db.ref(`rally_logs/${stageID}/car_${carNumber}`);
+
+      if (nodeRole === 'START') {
+        carRef.update({
+          carNumber: carNumber,
+          startTime: timestamp,
+          startLogged: true
+        });
+      } else if (nodeRole === 'FINISH') {
+        carRef.update({
+          carNumber: carNumber,
+          finishTime: timestamp,
+          finishLogged: true
+        });
+      }
+
+      // Auto-increment car number for quick sequential logging
+      carInput.value = parseInt(carNumber) + 1;
+    }
+
+    // Real-Time Feed Listener
+    function listenToStageUpdates() {
+      const feedContainer = document.getElementById('log-feed');
+      const stageRef = db.ref(`rally_logs/${stageID}`).limitToLast(15);
+
+      stageRef.on('value', (snapshot) => {
+        feedContainer.innerHTML = '';
+        const data = snapshot.val();
+        
+        if (!data) {
+          feedContainer.innerHTML = '<div style="color:#555; text-align:center; padding-top:10px;">No logs recorded yet</div>';
+          return;
+        }
+
+        Object.keys(data).reverse().forEach(key => {
+          const record = data[key];
+          const div = document.createElement('div');
+          div.className = 'log-item';
+
+          let statusDisplay = '';
+
+          if (record.startTime && record.finishTime) {
+            const diffMs = record.finishTime - record.startTime;
+            statusDisplay = `<span class="elapsed">${formatDuration(diffMs)}</span>`;
+          } else if (record.startTime && !record.finishTime) {
+            statusDisplay = `<span class="pending">ON STAGE...</span>`;
+          } else if (!record.startTime && record.finishTime) {
+            statusDisplay = `<span class="pending">NO START RECORD</span>`;
+          }
+
+          div.innerHTML = `
+            <span>CAR <strong>#${record.carNumber}</strong></span>
+            ${statusDisplay}
+          `;
+          feedContainer.appendChild(div);
+        });
+      });
+    }
+
+    // Format millisecond delta to MM:SS.s
+    function formatDuration(durationMs) {
+      const totalSeconds = Math.floor(durationMs / 1000);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      const tenths = Math.floor((durationMs % 1000) / 100);
+
+      const minsPadded = String(minutes).padStart(2, '0');
+      const secsPadded = String(seconds).padStart(2, '0');
+
+      return `${minsPadded}:${secsPadded}.${tenths}`;
+    }
+  </script>
+</body>
+</html>
