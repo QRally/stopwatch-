@@ -153,12 +153,22 @@
     .log-item {
       display: flex;
       justify-content: space-between;
+      align-items: center;
       padding: 8px;
       border-bottom: 1px solid #1c1c1c;
       font-size: 0.95rem;
     }
-    .log-item .elapsed { color: #0f0; font-weight: bold; }
-    .log-item .pending { color: #ffaa00; }
+    .log-item-details {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      font-size: 0.8rem;
+      color: #aaa;
+      margin-top: 2px;
+    }
+    .log-item-details .time-val { color: #fff; font-family: monospace; }
+    .log-item .elapsed { color: #0f0; font-weight: bold; font-size: 1.1rem; }
+    .log-item .pending { color: #ffaa00; font-weight: bold; }
   </style>
 </head>
 <body>
@@ -210,9 +220,9 @@
       messagingSenderId: "1026958520151",
       appId: "1:1026958520151:web:1665550c6b9e3a8bf9d812"
     };
-const app = firebase.initializeApp(firebaseConfig);
-const db = firebase.app().database("https://the-regulator-rally-default-rtdb.europe-west1.firebasedatabase.app");
 
+    const app = firebase.initializeApp(firebaseConfig);
+    const db = firebase.app().database("https://the-regulator-rally-default-rtdb.europe-west1.firebasedatabase.app");
 
     // Enable local offline persistence
     try {
@@ -305,7 +315,18 @@ const db = firebase.app().database("https://the-regulator-rally-default-rtdb.eur
       carInput.value = parseInt(carNumber) + 1;
     }
 
-    // Real-Time Feed Listener
+    // Helper to format epoch timestamp to HH:MM:SS.s
+    function formatClockTime(ts) {
+      if (!ts) return "--:--:--.-";
+      const d = new Date(ts);
+      const hrs = String(d.getHours()).padStart(2, '0');
+      const mins = String(d.getMinutes()).padStart(2, '0');
+      const secs = String(d.getSeconds()).padStart(2, '0');
+      const ms = Math.floor(d.getMilliseconds() / 100);
+      return `${hrs}:${mins}:${secs}.${ms}`;
+    }
+
+    // Real-Time Feed Listener with Detailed Clock Times
     function listenToStageUpdates() {
       const feedContainer = document.getElementById('log-feed');
       const stageRef = db.ref(`rally_logs/${stageID}`).limitToLast(15);
@@ -325,6 +346,8 @@ const db = firebase.app().database("https://the-regulator-rally-default-rtdb.eur
           div.className = 'log-item';
 
           let statusDisplay = '';
+          const startTimeStr = formatClockTime(record.startTime);
+          const finishTimeStr = formatClockTime(record.finishTime);
 
           if (record.startTime && record.finishTime) {
             const diffMs = record.finishTime - record.startTime;
@@ -332,12 +355,19 @@ const db = firebase.app().database("https://the-regulator-rally-default-rtdb.eur
           } else if (record.startTime && !record.finishTime) {
             statusDisplay = `<span class="pending">ON STAGE...</span>`;
           } else if (!record.startTime && record.finishTime) {
-            statusDisplay = `<span class="pending">NO START RECORD</span>`;
+            statusDisplay = `<span class="pending">NO START</span>`;
           }
 
           div.innerHTML = `
-            <span>CAR <strong>#${record.carNumber}</strong></span>
-            ${statusDisplay}
+            <div>
+              <div style="font-size:1.1rem; font-weight:bold;">CAR #${record.carNumber}</div>
+              <div class="log-item-details">
+                <span>S: <span class="time-val">${startTimeStr}</span> | F: <span class="time-val">${finishTimeStr}</span></span>
+              </div>
+            </div>
+            <div style="text-align:right;">
+              ${statusDisplay}
+            </div>
           `;
           feedContainer.appendChild(div);
         });
